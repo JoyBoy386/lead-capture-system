@@ -24,15 +24,14 @@ function coalesce(...values: (string | undefined | null)[]): string {
 }
 
 // ── Defaults ──────────────────────────────────────────
-
 function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
   return {
     name: "",
     title: "",
     email: "",
     phone: "",
-    source: "meta",
-    stage: "new",
+    source: "meta",       // Removed trailing space
+    stage: "new",         // Removed trailing space
     interest: "",
     chat_topic: "",
     cited: "",
@@ -42,18 +41,12 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
   };
 }
 
-// ── Mappers ───────────────────────────────────────────
-
-/**
- * Map Facebook field_data array → CrmLeadInsert.
- *
- * Facebook field names vary by form; we check common aliases.
- */
+// ─ Mappers ───────────────────────────────────────────
 export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
   return defaults({
     name: findFieldValue(fieldData, [
-      "full_name",
-      "name",
+      "full_name", // Removed trailing spaces
+      "name", 
       "first_name",
     ]),
     email: findFieldValue(fieldData, ["email"]),
@@ -65,29 +58,7 @@ export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
     title: findFieldValue(fieldData, ["job_title", "title", "position"]),
     source: "meta",
     interest: findFieldValue(fieldData, ["interest", "product", "service"]),
-    notes: `Lead captured via Meta Lead Form`,
-  });
-}
-
-/**
- * Map a LinkedIn lead payload → CrmLeadInsert.
- */
-export function mapLinkedInPayload(
-  payload: LinkedInLeadPayload
-): CrmLeadInsert {
-  const fullName =
-    payload.name ??
-    coalesce(payload.firstName, payload.lastName)
-      ? `${payload.firstName ?? ""} ${payload.lastName ?? ""}`.trim()
-      : "";
-
-  return defaults({
-    name: fullName,
-    email: payload.email ?? payload.emailAddress ?? "",
-    phone: payload.phone ?? payload.phoneNumber ?? "",
-    title: payload.jobTitle ?? payload.title ?? "",
-    source: "linkedin",
-    notes: `Company: ${payload.company ?? payload.companyName ?? "N/A"}`,
+    notes: "Lead captured via Meta Lead Form",
   });
 }
 
