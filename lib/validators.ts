@@ -13,7 +13,7 @@ export const metaLeadValueSchema = z.object({
   adgroup_id: z.string().optional(),
   ad_id: z.string().optional(),
   created_time: z.number().optional(),
-  // CRITICAL FIX: field_data must be optional because the webhook doesn't send it!
+  // CRITICAL: field_data must be optional because the initial webhook doesn't send it!
   field_data: z.array(metaFieldDataSchema).optional(), 
 });
 
@@ -32,6 +32,3 @@ export const metaWebhookBodySchema = z.object({
   object: z.string(),
   entry: z.array(metaWebhookEntrySchema),
 });
-
-// ── LinkedIn Schemas (Keep your existing ones if they work) ──
-// ...
