@@ -6,7 +6,6 @@ import type {
 } from "@/types/lead";
 
 // ── Helpers ───────────────────────────────────────────
-
 function findFieldValue(
   fields: MetaFieldData[],
   names: string[]
@@ -30,8 +29,8 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
     title: "",
     email: "",
     phone: "",
-    source: "meta",       // Removed trailing space
-    stage: "new",         // Removed trailing space
+    source: "meta",
+    stage: "new",
     interest: "",
     chat_topic: "",
     cited: "",
@@ -41,12 +40,12 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
   };
 }
 
-// ─ Mappers ───────────────────────────────────────────
+// ── Mappers ───────────────────────────────────────────
 export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
   return defaults({
     name: findFieldValue(fieldData, [
-      "full_name", // Removed trailing spaces
-      "name", 
+      "full_name",
+      "name",
       "first_name",
     ]),
     email: findFieldValue(fieldData, ["email"]),
@@ -62,9 +61,25 @@ export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
   });
 }
 
-/**
- * Map a chatbot lead payload → CrmLeadInsert.
- */
+export function mapLinkedInPayload(
+  payload: LinkedInLeadPayload
+): CrmLeadInsert {
+  const fullName =
+    payload.name ??
+    (coalesce(payload.firstName, payload.lastName)
+      ? `${payload.firstName ?? ""} ${payload.lastName ?? ""}`.trim()
+      : "");
+
+  return defaults({
+    name: fullName,
+    email: payload.email ?? payload.emailAddress ?? "",
+    phone: payload.phone ?? payload.phoneNumber ?? "",
+    title: payload.jobTitle ?? payload.title ?? "",
+    source: "linkedin",
+    notes: `Company: ${payload.company ?? payload.companyName ?? "N/A"}`,
+  });
+}
+
 export function mapChatbotPayload(
   payload: ChatbotLeadPayload
 ): CrmLeadInsert {
