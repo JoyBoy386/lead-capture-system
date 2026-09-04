@@ -22,7 +22,7 @@ function coalesce(...values: (string | undefined | null)[]): string {
   return "";
 }
 
-// ── Defaults ──────────────────────────────────────────
+// ─ Defaults ──────────────────────────────────────────
 function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
   return {
     name: "",
@@ -33,7 +33,7 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
     stage: "new",
     interest: "",
     chat_topic: "",
-    cited: [], // ✅ FIX: Changed from " " to [] for Postgres array column
+    cited: [],
     notes: "",
     lost: false,
     ...overrides,
