@@ -33,7 +33,7 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
     stage: "new",        // ✅ NO SPACE
     interest: "",
     chat_topic: "",
-    cited: [],           // ✅ EMPTY ARRAY
+    cited: [],           // ✅ EMPTY ARRAY FOR POSTGRES
     notes: "",
     lost: false,
     ...overrides,
