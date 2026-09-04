@@ -22,18 +22,18 @@ function coalesce(...values: (string | undefined | null)[]): string {
   return "";
 }
 
-// ─ Defaults ──────────────────────────────────────────
+// ── Defaults ──────────────────────────────────────────
 function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
   return {
     name: "",
     title: "",
     email: "",
     phone: "",
-    source: "meta",
-    stage: "new",
+    source: "meta",      // ✅ NO SPACE
+    stage: "new",        // ✅ NO SPACE
     interest: "",
     chat_topic: "",
-    cited: [],
+    cited: [],           // ✅ EMPTY ARRAY FOR POSTGRES
     notes: "",
     lost: false,
     ...overrides,
@@ -44,19 +44,19 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
 export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
   return defaults({
     name: findFieldValue(fieldData, [
-      "full_name",
-      "name",
-      "first_name",
+      "full_name",       // ✅ NO SPACE
+      "name",            // ✅ NO SPACE
+      "first_name",      // ✅ NO SPACE
     ]),
-    email: findFieldValue(fieldData, ["email"]),
+    email: findFieldValue(fieldData, ["email"]), // ✅ NO SPACE
     phone: findFieldValue(fieldData, [
-      "phone_number",
-      "phone",
-      "mobile",
+      "phone_number",    // ✅ NO SPACE
+      "phone",           // ✅ NO SPACE
+      "mobile",          // ✅ NO SPACE
     ]),
-    title: findFieldValue(fieldData, ["job_title", "title", "position"]),
-    source: "meta",
-    interest: findFieldValue(fieldData, ["interest", "product", "service"]),
+    title: findFieldValue(fieldData, ["job_title", "title", "position"]), // ✅ NO SPACE
+    source: "meta",      // ✅ NO SPACE
+    interest: findFieldValue(fieldData, ["interest", "product", "service"]), // ✅ NO SPACE
     notes: "Lead captured via Meta Lead Form",
   });
 }
@@ -75,7 +75,7 @@ export function mapLinkedInPayload(
     email: payload.email ?? payload.emailAddress ?? "",
     phone: payload.phone ?? payload.phoneNumber ?? "",
     title: payload.jobTitle ?? payload.title ?? "",
-    source: "linkedin",
+    source: "linkedin",  // ✅ NO SPACE
     notes: `Company: ${payload.company ?? payload.companyName ?? "N/A"}`,
   });
 }
@@ -87,7 +87,7 @@ export function mapChatbotPayload(
     name: payload.name ?? "",
     email: payload.email ?? "",
     phone: payload.phone ?? "",
-    source: "chatbot",
+    source: "chatbot",   // ✅ NO SPACE
     interest: payload.interest ?? "",
     chat_topic: payload.chat_topic ?? "",
     notes: payload.notes ?? "Lead captured via website chatbot",
