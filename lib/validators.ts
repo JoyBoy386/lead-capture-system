@@ -10,10 +10,11 @@ export const metaLeadValueSchema = z.object({
   leadgen_id: z.string(),
   form_id: z.string().optional(),
   page_id: z.string().optional(),
-  adgroup_id: z.string().optional(),
-  ad_id: z.string().optional(),
+  // Facebook often sends null for these, so we must allow it
+  adgroup_id: z.string().optional().nullable(), 
+  ad_id: z.string().optional().nullable(),
   created_time: z.number().optional(),
-  // CRITICAL: field_data must be optional because the initial webhook doesn't send it!
+  // CRITICAL: field_data is often missing in the initial webhook
   field_data: z.array(metaFieldDataSchema).optional(), 
 });
 
@@ -24,7 +25,7 @@ export const metaWebhookChangeSchema = z.object({
 
 export const metaWebhookEntrySchema = z.object({
   id: z.string(),
-  time: z.number(),
+  time: z.number().optional(), // Sometimes missing or string
   changes: z.array(metaWebhookChangeSchema),
 });
 
