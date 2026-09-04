@@ -33,7 +33,7 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
     stage: "new",
     interest: "",
     chat_topic: "",
-    cited: "",
+    cited: [], // ✅ FIX: Changed from " " to [] for Postgres array column
     notes: "",
     lost: false,
     ...overrides,

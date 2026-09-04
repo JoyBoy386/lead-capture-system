@@ -22,7 +22,7 @@ export interface CrmLead {
   created_at?: string; // ISO-8601 – defaults to now()
   interest: string;
   chat_topic: string;
-  cited: string;
+  cited: string[];
   notes: string;
   lost: boolean;
 }
