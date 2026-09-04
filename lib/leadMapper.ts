@@ -30,7 +30,7 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
     email: "",
     phone: "",
     source: "meta",      // ✅ NO SPACE
-    stage: "new",        // ✅ NO SPACE
+    stage: "lead",        // ✅ NO SPACE
     interest: "",
     chat_topic: "",
     cited: [],           // ✅ EMPTY ARRAY FOR POSTGRES

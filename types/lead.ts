@@ -4,6 +4,7 @@
 
 export type LeadSource = "meta" | "linkedin" | "chatbot";
 export type LeadStage =
+  | "lead"
   | "new"
   | "contacted"
   | "qualified"
