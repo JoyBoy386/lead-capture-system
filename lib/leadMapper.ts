@@ -40,7 +40,7 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
   };
 }
 
-// ── Mappers ───────────────────────────────────────────
+// ── Mappers ──────────────────────────────────────────
 export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
   return defaults({
     name: findFieldValue(fieldData, [
