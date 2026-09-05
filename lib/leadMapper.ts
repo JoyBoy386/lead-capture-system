@@ -42,6 +42,13 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
 
 // ── Mappers ───────────────────────────────────────────
 export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
+  const realPhoneNumber = findFieldValue(fieldData, [
+    "phone_number",
+    "phone",
+    "mobile",
+  ]);
+  const testPhoneNumber = process.env.META_TEST_PHONE ?? "";
+
   return defaults({
     name: findFieldValue(fieldData, [
       "full_name",       // ✅ NO SPACE
@@ -49,11 +56,7 @@ export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
       "first_name",      // ✅ NO SPACE
     ]),
     email: findFieldValue(fieldData, ["email"]), // ✅ NO SPACE
-    phone: findFieldValue(fieldData, [
-      "phone_number",    // ✅ NO SPACE
-      "phone",           // ✅ NO SPACE
-      "mobile",          // ✅ NO SPACE
-    ]),
+    phone: realPhoneNumber || testPhoneNumber,
     title: findFieldValue(fieldData, ["job_title", "title", "position"]), // ✅ NO SPACE
     source: "meta",      // ✅ NO SPACE
     interest: findFieldValue(fieldData, ["interest", "product", "service"]), // ✅ NO SPACE

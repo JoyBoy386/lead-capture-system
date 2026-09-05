@@ -5,6 +5,7 @@ import { createLead } from "@/lib/leadService";
 import { metaWebhookBodySchema } from "@/lib/validators";
 import { logger } from "@/lib/logger";
 import type { ApiResponse } from "@/types/lead";
+import twilio from "twilio";
 
 const CONTEXT = "webhook/meta";
 
@@ -32,6 +33,8 @@ export async function GET(request: NextRequest) {
 
 // ── POST – Receive Lead Events ────────────────────────
 
+// ── POST – Receive Lead Events ────────────────────────
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -49,7 +52,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Process each entry asynchronously (fire-and-forget)
+    // 2. Process each entry
     const { entry } = parsed.data;
 
     for (const e of entry) {
@@ -58,32 +61,50 @@ export async function POST(request: NextRequest) {
 
         const { leadgen_id, field_data } = change.value;
 
-        // 3. Fetch full lead from Graph API
+        // 3. Fetch full lead from Graph API if needed
         let fields = field_data;
-
         if (!fields || fields.length === 0) {
           const graphLead = await fetchLeadFromGraph(leadgen_id);
           fields = graphLead?.field_data ?? [];
         }
 
-        if (fields.length === 0) {
-          logger.warn(CONTEXT, `No field_data for leadgen ${leadgen_id}`);
+        // 4. ✅ MAP THE FIELDS (This was missing)
+        const mappedLead = mapMetaFields(fields);
+
+        // 5. Save to Supabase
+        const saved = await createLead(mappedLead);
+
+        if (!saved) {
+          logger.error(CONTEXT, "Failed to save lead to Supabase");
           continue;
         }
 
-        // 4. Map → CRM format
-        const crmLead = mapMetaFields(fields);
+        // 6. Send a test WhatsApp message only when Twilio is configured.
+        const accountSid = process.env.TWILIO_ACCOUNT_SID;
+        const authToken = process.env.TWILIO_AUTH_TOKEN;
+        const fromPhone = process.env.TWILIO_PHONE_NUMBER;
+        const testPhone = process.env.META_TEST_PHONE;
 
-        // 5. Persist
-        const saved = await createLead(crmLead);
+        if (accountSid && authToken && fromPhone && testPhone) {
+          const client = twilio(accountSid, authToken);
 
-        if (!saved) {
-          logger.error(CONTEXT, `Failed to save lead ${leadgen_id}`);
+          try {
+            await client.messages.create({
+              body: `Hi ${mappedLead.name || "there"}! This is a test message from your Meta Lead Ads prototype. We received your lead!`,
+              from: `whatsapp:${fromPhone}`,
+              to: `whatsapp:${testPhone}`,
+            });
+            logger.info(CONTEXT, "WhatsApp test message sent successfully");
+          } catch (twilioError) {
+            logger.error(CONTEXT, "Twilio error", twilioError);
+          }
+        } else {
+          logger.warn(CONTEXT, "Twilio environment variables are incomplete");
         }
       }
     }
 
-    // 6. Always 200 so Meta doesn't retry
+    // 7. Always 200 so Meta doesn't retry
     return NextResponse.json<ApiResponse>(
       { success: true, message: "Webhook processed" },
       { status: 200 }
