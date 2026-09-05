@@ -33,8 +33,6 @@ export async function GET(request: NextRequest) {
 
 // ── POST – Receive Lead Events ────────────────────────
 
-// ── POST – Receive Lead Events ────────────────────────
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -68,7 +66,7 @@ export async function POST(request: NextRequest) {
           fields = graphLead?.field_data ?? [];
         }
 
-        // 4. ✅ MAP THE FIELDS (This was missing)
+        // 4. ✅ MAP THE FIELDS
         const mappedLead = mapMetaFields(fields);
 
         // 5. Save to Supabase
@@ -82,24 +80,41 @@ export async function POST(request: NextRequest) {
         // 6. Send a test WhatsApp message only when Twilio is configured.
         const accountSid = process.env.TWILIO_ACCOUNT_SID;
         const authToken = process.env.TWILIO_AUTH_TOKEN;
-        const fromPhone = process.env.TWILIO_PHONE_NUMBER;
-        const testPhone = process.env.META_TEST_PHONE;
+        
+        // ✅ ADD .trim() TO REMOVE ANY HIDDEN SPACES OR NEWLINES FROM VERCEL
+        const fromPhone = process.env.TWILIO_PHONE_NUMBER?.trim();
+        const testPhone = process.env.META_TEST_PHONE?.trim();
 
         if (accountSid && authToken && fromPhone && testPhone) {
           const client = twilio(accountSid, authToken);
 
+          // ✅ DEFINE PAYLOAD EXPLICITLY AND LOG IT
+          const messagePayload = {
+            body: `Hi ${mappedLead.name || "there"}! This is a test message from your Meta Lead Ads prototype. We received your lead!`,
+            from: `whatsapp:${fromPhone}`,
+            to: `whatsapp:${testPhone}`,
+          };
+
+          logger.info(CONTEXT, "Twilio Payload Attempt:", messagePayload);
+
           try {
-            await client.messages.create({
-              body: `Hi ${mappedLead.name || "there"}! This is a test message from your Meta Lead Ads prototype. We received your lead!`,
-              from: `whatsapp:${fromPhone}`,
-              to: `whatsapp:${testPhone}`,
-            });
+            await client.messages.create(messagePayload);
             logger.info(CONTEXT, "WhatsApp test message sent successfully");
-          } catch (twilioError) {
-            logger.error(CONTEXT, "Twilio error", twilioError);
+          } catch (twilioError: any) {
+            logger.error(CONTEXT, "Twilio error details", {
+              message: twilioError.message,
+              code: twilioError.code,
+              status: twilioError.status,
+              moreInfo: twilioError.moreInfo,
+            });
           }
         } else {
-          logger.warn(CONTEXT, "Twilio environment variables are incomplete");
+          logger.warn(CONTEXT, "Twilio environment variables are incomplete", {
+            hasSid: !!accountSid,
+            hasToken: !!authToken,
+            hasFrom: !!fromPhone,
+            hasTo: !!testPhone
+          });
         }
       }
     }
