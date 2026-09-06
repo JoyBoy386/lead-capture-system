@@ -77,30 +77,25 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // 6. For Twilio trial/sandbox WhatsApp, use the sandbox sender and a normal body message.
+        // 6. Send SMS message via Twilio trial account.
         const accountSid = process.env.TWILIO_ACCOUNT_SID;
         const authToken = process.env.TWILIO_AUTH_TOKEN;
-
-        // Trial WhatsApp sandbox must use the sandbox sender number.
         const fromPhone = process.env.TWILIO_PHONE_NUMBER?.trim() || "+14155238886";
         const testPhone = process.env.META_TEST_PHONE?.trim();
 
         if (accountSid && authToken && fromPhone && testPhone) {
           const client = twilio(accountSid, authToken);
 
-          const messagePayload = {
-            body: `Hi ${mappedLead.name || "there"}! We received your lead and this is a Twilio trial sandbox test message.`,
-            from: `whatsapp:${fromPhone}`,
-            to: `whatsapp:${testPhone}`,
-          };
-
-          logger.info(CONTEXT, "Twilio sandbox payload attempt:", messagePayload);
-
           try {
-            await client.messages.create(messagePayload);
-            logger.info(CONTEXT, "WhatsApp sandbox test message sent successfully");
+            const msg = await client.messages.create({
+              body: `Hi ${mappedLead.name || "there"}! We received your Meta Lead. This is an SMS test.`,
+              from: fromPhone,
+              to: testPhone,
+            });
+
+            logger.info(CONTEXT, "SMS sent successfully", { sid: msg.sid });
           } catch (twilioError: any) {
-            logger.error(CONTEXT, "Twilio sandbox error details", {
+            logger.error(CONTEXT, "SMS error details", {
               message: twilioError.message,
               code: twilioError.code,
               status: twilioError.status,
