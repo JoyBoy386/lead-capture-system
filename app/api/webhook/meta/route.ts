@@ -77,31 +77,30 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // 6. Send a test WhatsApp message only when Twilio is configured.
+        // 6. For Twilio trial/sandbox WhatsApp, use the sandbox sender and a normal body message.
         const accountSid = process.env.TWILIO_ACCOUNT_SID;
         const authToken = process.env.TWILIO_AUTH_TOKEN;
-        
-        // ✅ ADD .trim() TO REMOVE ANY HIDDEN SPACES OR NEWLINES FROM VERCEL
-        const fromPhone = process.env.TWILIO_PHONE_NUMBER?.trim();
+
+        // Trial WhatsApp sandbox must use the sandbox sender number.
+        const fromPhone = process.env.TWILIO_PHONE_NUMBER?.trim() || "+14155238886";
         const testPhone = process.env.META_TEST_PHONE?.trim();
 
         if (accountSid && authToken && fromPhone && testPhone) {
           const client = twilio(accountSid, authToken);
 
-          // ✅ DEFINE PAYLOAD EXPLICITLY AND LOG IT
           const messagePayload = {
-            body: `Hi ${mappedLead.name || "there"}! This is a test message from your Meta Lead Ads prototype. We received your lead!`,
+            body: `Hi ${mappedLead.name || "there"}! We received your lead and this is a Twilio trial sandbox test message.`,
             from: `whatsapp:${fromPhone}`,
             to: `whatsapp:${testPhone}`,
           };
 
-          logger.info(CONTEXT, "Twilio Payload Attempt:", messagePayload);
+          logger.info(CONTEXT, "Twilio sandbox payload attempt:", messagePayload);
 
           try {
             await client.messages.create(messagePayload);
-            logger.info(CONTEXT, "WhatsApp test message sent successfully");
+            logger.info(CONTEXT, "WhatsApp sandbox test message sent successfully");
           } catch (twilioError: any) {
-            logger.error(CONTEXT, "Twilio error details", {
+            logger.error(CONTEXT, "Twilio sandbox error details", {
               message: twilioError.message,
               code: twilioError.code,
               status: twilioError.status,
@@ -113,7 +112,7 @@ export async function POST(request: NextRequest) {
             hasSid: !!accountSid,
             hasToken: !!authToken,
             hasFrom: !!fromPhone,
-            hasTo: !!testPhone
+            hasTo: !!testPhone,
           });
         }
       }
