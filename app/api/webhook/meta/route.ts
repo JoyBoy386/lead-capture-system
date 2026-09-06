@@ -77,39 +77,16 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // 6. Send SMS message via Twilio trial account.
-        const accountSid = process.env.TWILIO_ACCOUNT_SID;
-        const authToken = process.env.TWILIO_AUTH_TOKEN;
-        const fromPhone = process.env.TWILIO_PHONE_NUMBER?.trim() || "+14155238886";
-        const testPhone = process.env.META_TEST_PHONE?.trim();
+        // 6. Simulate notification for prototype demo (Twilio trial restrictions bypassed).
+        const testPhone = process.env.META_TEST_PHONE?.trim() || "+60178520801";
 
-        if (accountSid && authToken && fromPhone && testPhone) {
-          const client = twilio(accountSid, authToken);
-
-          try {
-            const msg = await client.messages.create({
-              body: `Hi ${mappedLead.name || "there"}! We received your Meta Lead. This is an SMS test.`,
-              from: fromPhone,
-              to: testPhone,
-            });
-
-            logger.info(CONTEXT, "SMS sent successfully", { sid: msg.sid });
-          } catch (twilioError: any) {
-            logger.error(CONTEXT, "SMS error details", {
-              message: twilioError.message,
-              code: twilioError.code,
-              status: twilioError.status,
-              moreInfo: twilioError.moreInfo,
-            });
-          }
-        } else {
-          logger.warn(CONTEXT, "Twilio environment variables are incomplete", {
-            hasSid: !!accountSid,
-            hasToken: !!authToken,
-            hasFrom: !!fromPhone,
-            hasTo: !!testPhone,
-          });
-        }
+        logger.info(CONTEXT, "📨 [SIMULATION] Would send message to:", testPhone);
+        logger.info(
+          CONTEXT,
+          "📨 [SIMULATION] Message:",
+          `Hi ${mappedLead.name || "there"}! We received your Meta Lead.`
+        );
+        logger.info(CONTEXT, "✅ Notification step completed (Simulated for prototype demo)");
       }
     }
 
