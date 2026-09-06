@@ -5,7 +5,6 @@ import { createLead } from "@/lib/leadService";
 import { metaWebhookBodySchema } from "@/lib/validators";
 import { logger } from "@/lib/logger";
 import type { ApiResponse } from "@/types/lead";
-import twilio from "twilio";
 
 const CONTEXT = "webhook/meta";
 
@@ -21,7 +20,6 @@ export async function GET(request: NextRequest) {
   const result = verifyMetaWebhook(mode, token, challenge);
 
   if (result) {
-    // Meta expects the raw challenge string as the body
     return new NextResponse(result, { status: 200 });
   }
 
@@ -38,19 +36,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     logger.debug(CONTEXT, "Incoming payload", body);
 
-    // 1. Validate structure
     const parsed = metaWebhookBodySchema.safeParse(body);
 
     if (!parsed.success) {
       logger.warn(CONTEXT, "Invalid payload", parsed.error.flatten());
-      // Always return 200 to Meta to avoid retries on bad data
       return NextResponse.json<ApiResponse>(
         { success: false, message: "Invalid payload" },
         { status: 200 }
       );
     }
 
-    // 2. Process each entry
     const { entry } = parsed.data;
 
     for (const e of entry) {
@@ -59,17 +54,14 @@ export async function POST(request: NextRequest) {
 
         const { leadgen_id, field_data } = change.value;
 
-        // 3. Fetch full lead from Graph API if needed
         let fields = field_data;
         if (!fields || fields.length === 0) {
           const graphLead = await fetchLeadFromGraph(leadgen_id);
           fields = graphLead?.field_data ?? [];
         }
 
-        // 4. ✅ MAP THE FIELDS
         const mappedLead = mapMetaFields(fields);
 
-        // 5. Save to Supabase
         const saved = await createLead(mappedLead);
 
         if (!saved) {
@@ -77,7 +69,6 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // 6. Simulate notification for prototype demo (Twilio trial restrictions bypassed).
         const testPhone = process.env.META_TEST_PHONE?.trim() || "+60178520801";
 
         logger.info(CONTEXT, "📨 [SIMULATION] Would send message to:", testPhone);
@@ -90,7 +81,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 7. Always 200 so Meta doesn't retry
     return NextResponse.json<ApiResponse>(
       { success: true, message: "Webhook processed" },
       { status: 200 }
@@ -100,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json<ApiResponse>(
       { success: false, message: "Internal error" },
-      { status: 200 } // still 200 for Meta
+      { status: 200 }
     );
   }
 }
