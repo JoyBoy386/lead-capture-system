@@ -2,7 +2,6 @@ import type {
   CrmLeadInsert,
   MetaFieldData,
   LinkedInLeadPayload,
-  ChatbotLeadPayload,
 } from "@/types/lead";
 
 // ── Helpers ───────────────────────────────────────────
@@ -29,11 +28,10 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
     title: "",
     email: "",
     phone: "",
-    source: "meta",      // ✅ NO SPACE
-    stage: "lead",        // ✅ NO SPACE
+    source: "meta",
+    stage: "lead",
     interest: "",
-    chat_topic: "",
-    cited: [],           // ✅ EMPTY ARRAY FOR POSTGRES
+    cited: [],
     notes: "",
     lost: false,
     ...overrides,
@@ -51,15 +49,15 @@ export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
 
   return defaults({
     name: findFieldValue(fieldData, [
-      "full_name",       // ✅ NO SPACE
-      "name",            // ✅ NO SPACE
-      "first_name",      // ✅ NO SPACE
+      "full_name",       
+      "name",            
+      "first_name",      
     ]),
-    email: findFieldValue(fieldData, ["email"]), // ✅ NO SPACE
+    email: findFieldValue(fieldData, ["email"]), 
     phone: realPhoneNumber || testPhoneNumber,
-    title: findFieldValue(fieldData, ["job_title", "title", "position"]), // ✅ NO SPACE
-    source: "meta",      // ✅ NO SPACE
-    interest: findFieldValue(fieldData, ["interest", "product", "service"]), // ✅ NO SPACE
+    title: findFieldValue(fieldData, ["job_title", "title", "position"]), 
+    source: "meta",      
+    interest: findFieldValue(fieldData, ["interest", "product", "service"]), 
     notes: "Lead captured via Meta Lead Form",
   });
 }
@@ -78,21 +76,8 @@ export function mapLinkedInPayload(
     email: payload.email ?? payload.emailAddress ?? "",
     phone: payload.phone ?? payload.phoneNumber ?? "",
     title: payload.jobTitle ?? payload.title ?? "",
-    source: "linkedin",  // ✅ NO SPACE
+    source: "linkedin",  
     notes: `Company: ${payload.company ?? payload.companyName ?? "N/A"}`,
   });
 }
 
-export function mapChatbotPayload(
-  payload: ChatbotLeadPayload
-): CrmLeadInsert {
-  return defaults({
-    name: payload.name ?? "",
-    email: payload.email ?? "",
-    phone: payload.phone ?? "",
-    source: "chatbot",   // ✅ NO SPACE
-    interest: payload.interest ?? "",
-    chat_topic: payload.chat_topic ?? "",
-    notes: payload.notes ?? "Lead captured via website chatbot",
-  });
-}

@@ -2,7 +2,7 @@
 // Canonical CRM lead row (maps 1-to-1 to crm_leads)
 // ──────────────────────────────────────────────────────
 
-export type LeadSource = "meta" | "linkedin" | "chatbot";
+export type LeadSource = "meta" | "linkedin";
 export type LeadStage =
   | "lead"
   | "new"
@@ -22,7 +22,6 @@ export interface CrmLead {
   stage: LeadStage;
   created_at?: string; // ISO-8601 – defaults to now()
   interest: string;
-  chat_topic: string;
   cited: string[];
   notes: string;
   lost: boolean;
@@ -76,20 +75,6 @@ export interface LinkedInLeadPayload {
   companyName?: string;
   jobTitle?: string;
   title?: string;
-  [key: string]: unknown;
-}
-
-// ──────────────────────────────────────────────────────
-// Chatbot webhook shapes
-// ──────────────────────────────────────────────────────
-
-export interface ChatbotLeadPayload {
-  name?: string;
-  email?: string;
-  phone?: string;
-  interest?: string;
-  chat_topic?: string;
-  notes?: string;
   [key: string]: unknown;
 }
 
