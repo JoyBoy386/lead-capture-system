@@ -4,6 +4,7 @@ import { mapMetaFields } from "@/lib/leadMapper";
 import { createLead } from "@/lib/leadService";
 import { metaWebhookBodySchema } from "@/lib/validators";
 import { logger } from "@/lib/logger";
+import { sendWhatsAppNotification } from "@/lib/metaWhatsApp";
 import type { ApiResponse } from "@/types/lead";
 
 const CONTEXT = "webhook/meta";
@@ -69,15 +70,18 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        const testPhone = process.env.META_TEST_PHONE?.trim() || "+60178520801";
+        const targetPhone = mappedLead.phone || process.env.META_TEST_PHONE || "+60178520801";
 
-        logger.info(CONTEXT, "📨 [SIMULATION] Would send message to:", testPhone);
-        logger.info(
-          CONTEXT,
-          "📨 [SIMULATION] Message:",
-          `Hi ${mappedLead.name || "there"}! We received your Meta Lead.`
-        );
-        logger.info(CONTEXT, "✅ Notification step completed (Simulated for prototype demo)");
+        const notified = await sendWhatsAppNotification({
+          to: targetPhone,
+          name: mappedLead.name || "there",
+        });
+
+        if (notified) {
+          logger.info(CONTEXT, "✅ WhatsApp notification step completed");
+        } else {
+          logger.warn(CONTEXT, "⚠️ WhatsApp notification failed, but lead was saved to DB");
+        }
       }
     }
 

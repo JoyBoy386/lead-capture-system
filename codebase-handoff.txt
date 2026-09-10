@@ -1,0 +1,814 @@
+LeadCaptureSystem – AI code handoff
+==================================
+Date: 2026-09-10
+Scope: app source, shared libraries, types, and config for review by another AI.
+
+Note: environment secrets and generated dependencies were intentionally excluded.
+
+===== package.json =====
+{
+  "name": "lead-capture-system",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.0",
+    "next": "^15.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "twilio": "^6.1.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "19.2.18",
+    "typescript": "^5.7.0"
+  }
+}
+
+===== tsconfig.json =====
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "types": [
+      "node"
+    ],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "next-env.d.ts",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
+
+===== app/api/webhook/linkedin/route.ts =====
+import { NextRequest, NextResponse } from "next/server";
+import { createLead } from "@/lib/leadService";
+import { logger } from "@/lib/logger";
+import type { ApiResponse } from "@/types/lead";
+
+const CONTEXT = "webhook/linkedin";
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    logger.debug(CONTEXT, "Incoming payload", body);
+
+    const fullName = String(body?.fullName ?? "").trim();
+    const email = String(body?.email ?? "").trim();
+    const phone = String(body?.phone ?? "").trim();
+    const company = String(body?.company ?? "").trim();
+    const jobTitle = String(body?.jobTitle ?? "").trim();
+
+    const mappedLead = {
+      name: fullName,
+      title: jobTitle,
+      email,
+      phone,
+      source: "linkedin" as const,
+      stage: "lead" as const,
+      interest: "",
+      chat_topic: "",
+      cited: [],
+      notes: company ? `Company: ${company}` : "Lead captured via LinkedIn webhook",
+      lost: false,
+    };
+
+    const saved = await createLead(mappedLead);
+
+    if (!saved) {
+      logger.error(CONTEXT, "Failed to save lead to Supabase");
+      return NextResponse.json<ApiResponse>(
+        { success: false, message: "Failed to save lead" },
+        { status: 200 }
+      );
+    }
+
+    const testPhone = process.env.META_TEST_PHONE?.trim() || "+60178520801";
+
+    logger.info(CONTEXT, "📨 [SIMULATION] Would send message to:", testPhone);
+    logger.info(
+      CONTEXT,
+      "📨 [SIMULATION] Message:",
+      `Hi ${mappedLead.name || "there"}! We received your LinkedIn lead.`
+    );
+    logger.info(CONTEXT, "✅ Notification step completed (Simulated for prototype demo)");
+
+    return NextResponse.json<ApiResponse>(
+      { success: true, message: "Webhook processed" },
+      { status: 200 }
+    );
+  } catch (err) {
+    logger.error(CONTEXT, "Unhandled error", err);
+
+    return NextResponse.json<ApiResponse>(
+      { success: false, message: "Internal error" },
+      { status: 200 }
+    );
+  }
+}
+
+===== app/api/webhook/meta/route.ts =====
+import { NextRequest, NextResponse } from "next/server";
+import { verifyMetaWebhook, fetchLeadFromGraph } from "@/lib/facebook";
+import { mapMetaFields } from "@/lib/leadMapper";
+import { createLead } from "@/lib/leadService";
+import { metaWebhookBodySchema } from "@/lib/validators";
+import { logger } from "@/lib/logger";
+import type { ApiResponse } from "@/types/lead";
+
+const CONTEXT = "webhook/meta";
+
+// ── GET – Webhook Verification ────────────────────────
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+
+  const mode = searchParams.get("hub.mode");
+  const token = searchParams.get("hub.verify_token");
+  const challenge = searchParams.get("hub.challenge");
+
+  const result = verifyMetaWebhook(mode, token, challenge);
+
+  if (result) {
+    return new NextResponse(result, { status: 200 });
+  }
+
+  return NextResponse.json<ApiResponse>(
+    { success: false, message: "Verification failed" },
+    { status: 403 }
+  );
+}
+
+// ── POST – Receive Lead Events ────────────────────────
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    logger.debug(CONTEXT, "Incoming payload", body);
+
+    const parsed = metaWebhookBodySchema.safeParse(body);
+
+    if (!parsed.success) {
+      logger.warn(CONTEXT, "Invalid payload", parsed.error.flatten());
+      return NextResponse.json<ApiResponse>(
+        { success: false, message: "Invalid payload" },
+        { status: 200 }
+      );
+    }
+
+    const { entry } = parsed.data;
+
+    for (const e of entry) {
+      for (const change of e.changes) {
+        if (change.field !== "leadgen") continue;
+
+        const { leadgen_id, field_data } = change.value;
+
+        let fields = field_data;
+        if (!fields || fields.length === 0) {
+          const graphLead = await fetchLeadFromGraph(leadgen_id);
+          fields = graphLead?.field_data ?? [];
+        }
+
+        const mappedLead = mapMetaFields(fields);
+
+        const saved = await createLead(mappedLead);
+
+        if (!saved) {
+          logger.error(CONTEXT, "Failed to save lead to Supabase");
+          continue;
+        }
+
+        const testPhone = process.env.META_TEST_PHONE?.trim() || "+60178520801";
+
+        logger.info(CONTEXT, "📨 [SIMULATION] Would send message to:", testPhone);
+        logger.info(
+          CONTEXT,
+          "📨 [SIMULATION] Message:",
+          `Hi ${mappedLead.name || "there"}! We received your Meta Lead.`
+        );
+        logger.info(CONTEXT, "✅ Notification step completed (Simulated for prototype demo)");
+      }
+    }
+
+    return NextResponse.json<ApiResponse>(
+      { success: true, message: "Webhook processed" },
+      { status: 200 }
+    );
+  } catch (err) {
+    logger.error(CONTEXT, "Unhandled error", err);
+
+    return NextResponse.json<ApiResponse>(
+      { success: false, message: "Internal error" },
+      { status: 200 }
+    );
+  }
+}
+
+===== lib/leadService.ts =====
+import { supabaseAdmin } from "./supabase";
+import { logger } from "./logger";
+import type { CrmLeadInsert, CrmLead } from "@/types/lead";
+
+const CONTEXT = "leadService";
+const TABLE = "crm_leads";
+
+// ── Create ────────────────────────────────────────────
+
+/**
+ * Insert a single lead into crm_leads.
+ * Returns the inserted row or null on failure.
+ */
+export async function createLead(
+  lead: CrmLeadInsert
+): Promise<CrmLead | null> {
+  try {
+    const supabase = supabaseAdmin();
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .insert(lead)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error(CONTEXT, "Insert failed", error);
+      return null;
+    }
+
+    logger.info(CONTEXT, `Lead created – ${data.id}`, {
+      source: data.source,
+      email: data.email,
+    });
+
+    return data as CrmLead;
+  } catch (err) {
+    logger.error(CONTEXT, "Unexpected error in createLead", err);
+    return null;
+  }
+}
+
+// ── Read ──────────────────────────────────────────────
+
+export async function getLeadById(id: string): Promise<CrmLead | null> {
+  try {
+    const supabase = supabaseAdmin();
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      logger.error(CONTEXT, "getLeadById failed", error);
+      return null;
+    }
+
+    return data as CrmLead;
+  } catch (err) {
+    logger.error(CONTEXT, "Unexpected error in getLeadById", err);
+    return null;
+  }
+}
+
+export async function getLeadsBySource(
+  source: string,
+  limit = 50
+): Promise<CrmLead[]> {
+  try {
+    const supabase = supabaseAdmin();
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select("*")
+      .eq("source", source)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      logger.error(CONTEXT, "getLeadsBySource failed", error);
+      return [];
+    }
+
+    return (data ?? []) as CrmLead[];
+  } catch (err) {
+    logger.error(CONTEXT, "Unexpected error in getLeadsBySource", err);
+    return [];
+  }
+}
+
+// ── Update ────────────────────────────────────────────
+
+export async function updateLead(
+  id: string,
+  updates: Partial<CrmLeadInsert>
+): Promise<CrmLead | null> {
+  try {
+    const supabase = supabaseAdmin();
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error(CONTEXT, "Update failed", error);
+      return null;
+    }
+
+    logger.info(CONTEXT, `Lead updated – ${id}`);
+    return data as CrmLead;
+  } catch (err) {
+    logger.error(CONTEXT, "Unexpected error in updateLead", err);
+    return null;
+  }
+}
+
+// ── Upsert (by email) ────────────────────────────────
+
+/**
+ * Insert a lead or update the existing row if the email
+ * already exists (requires a unique constraint on email
+ * in your Supabase table, or use onConflict).
+ */
+export async function upsertLeadByEmail(
+  lead: CrmLeadInsert
+): Promise<CrmLead | null> {
+  try {
+    const supabase = supabaseAdmin();
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .upsert(lead, { onConflict: "email" })
+      .select()
+      .single();
+
+    if (error) {
+      logger.error(CONTEXT, "Upsert failed", error);
+      // Fallback: plain insert
+      return createLead(lead);
+    }
+
+    logger.info(CONTEXT, `Lead upserted – ${data.id}`);
+    return data as CrmLead;
+  } catch (err) {
+    logger.error(CONTEXT, "Unexpected error in upsertLeadByEmail", err);
+    return null;
+  }
+}
+
+===== lib/leadMapper.ts =====
+import type {
+  CrmLeadInsert,
+  MetaFieldData,
+  LinkedInLeadPayload,
+  ChatbotLeadPayload,
+} from "@/types/lead";
+
+// ── Helpers ───────────────────────────────────────────
+function findFieldValue(
+  fields: MetaFieldData[],
+  names: string[]
+): string {
+  const lower = names.map((n) => n.toLowerCase());
+  const match = fields.find((f) => lower.includes(f.name.toLowerCase()));
+  return match?.values?.[0]?.trim() ?? "";
+}
+
+function coalesce(...values: (string | undefined | null)[]): string {
+  for (const v of values) {
+    if (v && v.trim()) return v.trim();
+  }
+  return "";
+}
+
+// ── Defaults ──────────────────────────────────────────
+function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
+  return {
+    name: "",
+    title: "",
+    email: "",
+    phone: "",
+    source: "meta",      // ✅ NO SPACE
+    stage: "lead",        // ✅ NO SPACE
+    interest: "",
+    chat_topic: "",
+    cited: [],           // ✅ EMPTY ARRAY FOR POSTGRES
+    notes: "",
+    lost: false,
+    ...overrides,
+  };
+}
+
+// ── Mappers ───────────────────────────────────────────
+export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
+  const realPhoneNumber = findFieldValue(fieldData, [
+    "phone_number",
+    "phone",
+    "mobile",
+  ]);
+  const testPhoneNumber = process.env.META_TEST_PHONE ?? "";
+
+  return defaults({
+    name: findFieldValue(fieldData, [
+      "full_name",       // ✅ NO SPACE
+      "name",            // ✅ NO SPACE
+      "first_name",      // ✅ NO SPACE
+    ]),
+    email: findFieldValue(fieldData, ["email"]), // ✅ NO SPACE
+    phone: realPhoneNumber || testPhoneNumber,
+    title: findFieldValue(fieldData, ["job_title", "title", "position"]), // ✅ NO SPACE
+    source: "meta",      // ✅ NO SPACE
+    interest: findFieldValue(fieldData, ["interest", "product", "service"]), // ✅ NO SPACE
+    notes: "Lead captured via Meta Lead Form",
+  });
+}
+
+export function mapLinkedInPayload(
+  payload: LinkedInLeadPayload
+): CrmLeadInsert {
+  const fullName =
+    payload.name ??
+    (coalesce(payload.firstName, payload.lastName)
+      ? `${payload.firstName ?? ""} ${payload.lastName ?? ""}`.trim()
+      : "");
+
+  return defaults({
+    name: fullName,
+    email: payload.email ?? payload.emailAddress ?? "",
+    phone: payload.phone ?? payload.phoneNumber ?? "",
+    title: payload.jobTitle ?? payload.title ?? "",
+    source: "linkedin",  // ✅ NO SPACE
+    notes: `Company: ${payload.company ?? payload.companyName ?? "N/A"}`,
+  });
+}
+
+export function mapChatbotPayload(
+  payload: ChatbotLeadPayload
+): CrmLeadInsert {
+  return defaults({
+    name: payload.name ?? "",
+    email: payload.email ?? "",
+    phone: payload.phone ?? "",
+    source: "chatbot",   // ✅ NO SPACE
+    interest: payload.interest ?? "",
+    chat_topic: payload.chat_topic ?? "",
+    notes: payload.notes ?? "Lead captured via website chatbot",
+  });
+}
+
+===== lib/facebook.ts =====
+import { logger } from "./logger";
+import type { MetaFieldData } from "@/types/lead";
+
+const CONTEXT = "facebook";
+const GRAPH_BASE = "https://graph.facebook.com/v21.0";
+
+/**
+ * Fetch full lead details from the Facebook Graph API
+ * using the leadgen_id received in the webhook.
+ */
+export async function fetchLeadFromGraph(
+  leadgenId: string
+): Promise<{ field_data: MetaFieldData[] } | null> {
+  const token = process.env.META_ACCESS_TOKEN;
+
+  if (!token) {
+    logger.error(CONTEXT, "META_ACCESS_TOKEN is not set");
+    return null;
+  }
+
+  const url = `${GRAPH_BASE}/${leadgenId}?access_token=${token}`;
+
+  try {
+    logger.info(CONTEXT, `Fetching lead ${leadgenId} from Graph API`);
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      logger.error(CONTEXT, `Graph API error ${res.status}`, body);
+      return null;
+    }
+
+    const data = await res.json();
+    logger.debug(CONTEXT, "Graph API response", data);
+
+    return {
+      field_data: data.field_data ?? [],
+    };
+  } catch (err) {
+    logger.error(CONTEXT, "Graph API fetch failed", err);
+    return null;
+  }
+}
+
+/**
+ * Verify the webhook subscription (GET handshake).
+ * Returns the challenge string if valid, null otherwise.
+ */
+export function verifyMetaWebhook(
+  mode: string | null,
+  token: string | null,
+  challenge: string | null
+): string | null {
+  const expectedToken = process.env.META_VERIFY_TOKEN;
+
+  if (mode === "subscribe" && token === expectedToken && challenge) {
+    logger.info(CONTEXT, "Webhook verification successful");
+    return challenge;
+  }
+
+  logger.warn(CONTEXT, "Webhook verification failed", { mode, token });
+  return null;
+}
+
+===== lib/validators.ts =====
+import { z } from "zod";
+
+// ── Meta / Facebook Schemas ───────────────────────────
+export const metaFieldDataSchema = z.object({
+  name: z.string(),
+  values: z.array(z.string()),
+});
+
+export const metaLeadValueSchema = z.object({
+  leadgen_id: z.string(),
+  form_id: z.string().optional(),
+  page_id: z.string().optional(),
+  adgroup_id: z.string().optional().nullable(),
+  ad_id: z.string().optional().nullable(),
+  created_time: z.number().optional(),
+  // CRITICAL: field_data is often missing in the initial webhook ping
+  field_data: z.array(metaFieldDataSchema).optional(), 
+});
+
+export const metaWebhookChangeSchema = z.object({
+  field: z.string(),
+  value: metaLeadValueSchema,
+});
+
+export const metaWebhookEntrySchema = z.object({
+  id: z.string(),
+  time: z.number().optional(),
+  changes: z.array(metaWebhookChangeSchema),
+});
+
+export const metaWebhookBodySchema = z.object({
+  object: z.string(),
+  entry: z.array(metaWebhookEntrySchema),
+});
+
+// ── LinkedIn Schemas ──────────────────────────────────
+export const linkedInLeadSchema = z.object({
+  name: z.string().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  email: z.string().optional(),
+  emailAddress: z.string().optional(),
+  phone: z.string().optional(),
+  phoneNumber: z.string().optional(),
+  company: z.string().optional(),
+  companyName: z.string().optional(),
+  jobTitle: z.string().optional(),
+  title: z.string().optional(),
+});
+
+===== lib/logger.ts =====
+type LogLevel = "info" | "warn" | "error" | "debug";
+
+const LOG_LEVELS: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+};
+
+const currentLevel: LogLevel =
+  (process.env.LOG_LEVEL as LogLevel) ?? "info";
+
+function shouldLog(level: LogLevel): boolean {
+  return LOG_LEVELS[level] >= LOG_LEVELS[currentLevel];
+}
+
+function formatMessage(level: LogLevel, context: string, message: string, meta?: unknown): string {
+  const timestamp = new Date().toISOString();
+  const metaStr = meta ? ` ${JSON.stringify(meta)}` : "";
+  return `[${timestamp}] [${level.toUpperCase()}] [${context}] ${message}${metaStr}`;
+}
+
+export const logger = {
+  info(context: string, message: string, meta?: unknown) {
+    if (shouldLog("info")) console.log(formatMessage("info", context, message, meta));
+  },
+  warn(context: string, message: string, meta?: unknown) {
+    if (shouldLog("warn")) console.warn(formatMessage("warn", context, message, meta));
+  },
+  error(context: string, message: string, meta?: unknown) {
+    if (shouldLog("error")) console.error(formatMessage("error", context, message, meta));
+  },
+  debug(context: string, message: string, meta?: unknown) {
+    if (shouldLog("debug")) console.debug(formatMessage("debug", context, message, meta));
+  },
+};
+
+===== lib/supabase.ts =====
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { logger } from "./logger";
+
+const CONTEXT = "supabase";
+
+function getSupabaseAdmin(): SupabaseClient {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    throw new Error(
+      "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables"
+    );
+  }
+
+  return createClient(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+// Singleton for server-side usage
+let _client: SupabaseClient | null = null;
+
+export function supabaseAdmin(): SupabaseClient {
+  if (!_client) {
+    _client = getSupabaseAdmin();
+    logger.info(CONTEXT, "Supabase admin client initialised");
+  }
+  return _client;
+}
+
+===== types/lead.ts =====
+// ──────────────────────────────────────────────────────
+// Canonical CRM lead row (maps 1-to-1 to crm_leads)
+// ──────────────────────────────────────────────────────
+
+export type LeadSource = "meta" | "linkedin" | "chatbot";
+export type LeadStage =
+  | "lead"
+  | "new"
+  | "contacted"
+  | "qualified"
+  | "proposal"
+  | "won"
+  | "lost";
+
+export interface CrmLead {
+  id?: string; // UUID – generated by Supabase
+  name: string;
+  title: string;
+  email: string;
+  phone: string;
+  source: LeadSource;
+  stage: LeadStage;
+  created_at?: string; // ISO-8601 – defaults to now()
+  interest: string;
+  chat_topic: string;
+  cited: string[];
+  notes: string;
+  lost: boolean;
+}
+
+export type CrmLeadInsert = Omit<CrmLead, "id" | "created_at">;
+
+// ──────────────────────────────────────────────────────
+// Facebook / Meta webhook shapes
+// ──────────────────────────────────────────────────────
+
+export interface MetaFieldData {
+  name: string;
+  values: string[];
+}
+
+export interface MetaLeadPayload {
+  leadgen_id: string;
+  form_id?: string;
+  page_id?: string;
+  field_data: MetaFieldData[];
+}
+
+export interface MetaWebhookEntry {
+  id: string;
+  time: number;
+  changes: Array<{
+    field: string;
+    value: MetaLeadPayload;
+  }>;
+}
+
+export interface MetaWebhookBody {
+  object: string;
+  entry: MetaWebhookEntry[];
+}
+
+// ──────────────────────────────────────────────────────
+// LinkedIn webhook shapes
+// ──────────────────────────────────────────────────────
+
+export interface LinkedInLeadPayload {
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  emailAddress?: string;
+  phone?: string;
+  phoneNumber?: string;
+  company?: string;
+  companyName?: string;
+  jobTitle?: string;
+  title?: string;
+  [key: string]: unknown;
+}
+
+// ──────────────────────────────────────────────────────
+// Chatbot webhook shapes
+// ──────────────────────────────────────────────────────
+
+export interface ChatbotLeadPayload {
+  name?: string;
+  email?: string;
+  phone?: string;
+  interest?: string;
+  chat_topic?: string;
+  notes?: string;
+  [key: string]: unknown;
+}
+
+// ──────────────────────────────────────────────────────
+// Generic API response envelope
+// ──────────────────────────────────────────────────────
+
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  message: string;
+  data?: T;
+  error?: string;
+}
+
+===== meeting-notes-2026-09-04.md =====
+# Meeting Notes
+
+**Date:** September 4, 2026
+
+## 1. Tasks
+
+- Complete the WhatsApp integration.
+- Create a Content Management System for admins and leads.
+
+## 2. Current Status
+
+- Waiting for client feedback regarding the WhatsApp integration.
+
+## 3. Next Steps
+
+- Once client feedback is received, begin the WhatsApp integration.
+- Deploy the website to the Docujet domain.
