@@ -1,7 +1,6 @@
 import type {
   CrmLeadInsert,
   MetaFieldData,
-  LinkedInLeadPayload,
 } from "@/types/lead";
 
 // ── Helpers ───────────────────────────────────────────
@@ -62,22 +61,18 @@ export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
   });
 }
 
-export function mapLinkedInPayload(
-  payload: LinkedInLeadPayload
-): CrmLeadInsert {
-  const fullName =
-    payload.name ??
-    (coalesce(payload.firstName, payload.lastName)
-      ? `${payload.firstName ?? ""} ${payload.lastName ?? ""}`.trim()
-      : "");
+export function mapLinkedInPayload(payload: Record<string, string | undefined>): CrmLeadInsert {
+  const fullName = payload.firstname && payload.lastname
+    ? `${payload.firstname} ${payload.lastname}`.trim()
+    : payload.fullname || payload.name || "Unknown";
 
   return defaults({
     name: fullName,
-    email: payload.email ?? payload.emailAddress ?? "",
-    phone: payload.phone ?? payload.phoneNumber ?? "",
-    title: payload.jobTitle ?? payload.title ?? "",
-    source: "linkedin",  
-    notes: `Company: ${payload.company ?? payload.companyName ?? "N/A"}`,
+    email: payload.email || "",
+    phone: payload.phone || payload.phonenumber || "",
+    title: payload.jobtitle || payload.title || "",
+    source: "linkedin",
+    notes: `Company: ${payload.companyname || payload.company || "N/A"}`,
   });
 }
 

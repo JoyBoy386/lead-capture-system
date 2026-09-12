@@ -2,28 +2,16 @@ import crypto from "crypto";
 import { logger } from "./logger";
 
 const CONTEXT = "linkedin";
-const LINKEDIN_API_BASE = "https://api.linkedin.com/v2";
-
-function extractIdFromUrn(urn: string): string {
-  const parts = urn.split(":");
-  return parts[parts.length - 1] ?? "";
-}
-
-function readLeadValue(data: Record<string, any>, fieldName: string): string {
-  const values = data?.element?.data?.values ?? data?.values ?? [];
-
-  const match = values.find((value: any) => value?.fieldName === fieldName);
-  return String(match?.value ?? "").trim();
-}
+const LINKEDIN_API_BASE = "https://api.linkedin.com/rest";
+const API_VERSION = "202401";
 
 /**
- * Fetch the actual lead details using LinkedIn's leadgen API.
- * Real LinkedIn webhooks usually send URNs only, not full PII.
+ * Fetch the form schema and lead response, then map question IDs to names.
  */
 export async function fetchLinkedInLeadData(
   leadUrn: string,
   formUrn: string
-): Promise<{ name: string; email: string; phone: string; jobTitle: string } | null> {
+): Promise<Record<string, string> | null> {
   const accessToken = process.env.LINKEDIN_ACCESS_TOKEN;
 
   if (!accessToken) {
@@ -31,43 +19,60 @@ export async function fetchLinkedInLeadData(
     return null;
   }
 
-  const leadId = extractIdFromUrn(leadUrn);
-  const formId = extractIdFromUrn(formUrn);
+  const leadId = leadUrn.split(":").pop() || "";
+  const formId = formUrn.match(/leadGenForm:(\d+)/)?.[1] || "";
 
   if (!leadId || !formId) {
     logger.warn(CONTEXT, "Invalid LinkedIn lead or form URN", { leadUrn, formUrn });
     return null;
   }
 
-  const url = `${LINKEDIN_API_BASE}/leadGenForms/${formId}/leads/${leadId}`;
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    "LinkedIn-Version": API_VERSION,
+    "X-Restli-Protocol-Version": "2.0.0",
+    "Content-Type": "application/json",
+  };
 
   try {
-    logger.info(CONTEXT, `Fetching lead ${leadId} from LinkedIn API`);
+    const formRes = await fetch(`${LINKEDIN_API_BASE}/leadForms/${formId}`, { headers });
+    if (!formRes.ok) throw new Error(`Form fetch failed: ${formRes.status}`);
 
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "X-Restli-Protocol-Version": "2.0.0",
-        Accept: "application/json",
-      },
-    });
+    const formData = await formRes.json();
+    const questionMap: Record<string, string> = {};
 
-    if (!res.ok) {
-      const body = await res.text();
-      logger.error(CONTEXT, `LinkedIn API error ${res.status}`, body);
-      return null;
+    for (const question of formData.content?.questions ?? []) {
+      if (question.questionId && question.predefinedField) {
+        questionMap[question.questionId] = question.predefinedField
+          .toLowerCase()
+          .replace(/_/g, "");
+      } else if (question.questionId && question.name) {
+        questionMap[question.questionId] = question.name
+          .toLowerCase()
+          .replace(/_/g, "");
+      }
     }
 
-    const data = await res.json();
-    logger.debug(CONTEXT, "LinkedIn API response", data);
+    const leadRes = await fetch(`${LINKEDIN_API_BASE}/leadFormResponses/${leadId}`, { headers });
+    if (!leadRes.ok) throw new Error(`Lead fetch failed: ${leadRes.status}`);
 
-    return {
-      name: readLeadValue(data, "fullName"),
-      email: readLeadValue(data, "email"),
-      phone: readLeadValue(data, "phone"),
-      jobTitle: readLeadValue(data, "jobTitle"),
-    };
+    const leadData = await leadRes.json();
+    const parsedLead: Record<string, string> = {};
+
+    for (const answer of leadData.formResponse?.answers ?? []) {
+      const fieldName = questionMap[answer.questionId] || `custom_q_${answer.questionId}`;
+      const textAnswer = answer.answerDetails?.textQuestionAnswer?.answer;
+      const choiceAnswer = answer.answerDetails?.multipleChoiceAnswer?.options;
+
+      if (textAnswer) {
+        parsedLead[fieldName] = String(textAnswer).trim();
+      } else if (Array.isArray(choiceAnswer)) {
+        parsedLead[fieldName] = `Option IDs: ${choiceAnswer.join(", ")}`;
+      }
+    }
+
+    logger.info(CONTEXT, `Successfully parsed LinkedIn lead ${leadId}`);
+    return parsedLead;
   } catch (err) {
     logger.error(CONTEXT, "LinkedIn API fetch failed", err);
     return null;
@@ -101,10 +106,11 @@ export function verifyLinkedInSignature(
     .update(rawBody)
     .digest("hex");
 
-  const isValid = crypto.timingSafeEqual(
-    Buffer.from(expected, "hex"),
-    Buffer.from(signatureHeader, "hex")
-  );
+  const expectedBuffer = Buffer.from(expected, "hex");
+  const signatureBuffer = Buffer.from(signatureHeader, "hex");
+  const isValid =
+    expectedBuffer.length === signatureBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, signatureBuffer);
 
   if (!isValid) {
     logger.warn(CONTEXT, "Signature mismatch");

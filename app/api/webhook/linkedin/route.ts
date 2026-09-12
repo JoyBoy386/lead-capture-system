@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { createLead } from "@/lib/leadService";
 import { mapLinkedInPayload } from "@/lib/leadMapper";
 import { logger } from "@/lib/logger";
@@ -6,6 +7,21 @@ import { fetchLinkedInLeadData, verifyLinkedInSignature } from "@/lib/linkedin";
 import type { ApiResponse } from "@/types/lead";
 
 const CONTEXT = "webhook/linkedin";
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const challenge = searchParams.get("challenge") || searchParams.get("verificationToken");
+  const secret = process.env.LINKEDIN_SECRET;
+
+  if (challenge && secret) {
+    const hmac = crypto.createHmac("sha256", secret).update(challenge).digest("hex");
+    logger.info(CONTEXT, "LinkedIn webhook verification successful");
+    return new NextResponse(hmac, { status: 200 });
+  }
+
+  logger.warn(CONTEXT, "LinkedIn webhook verification failed");
+  return new NextResponse("Forbidden: Invalid verification", { status: 403 });
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,37 +40,38 @@ export async function POST(request: NextRequest) {
     const body = rawBody ? JSON.parse(rawBody) : {};
     logger.debug(CONTEXT, "Incoming payload", body);
 
-    const directFullName = String(body?.fullName ?? "").trim();
-    const directEmail = String(body?.email ?? "").trim();
-    const directPhone = String(body?.phone ?? "").trim();
-    const directCompany = String(body?.company ?? "").trim();
-    const directJobTitle = String(body?.jobTitle ?? "").trim();
+    if (body.leadAction && body.leadAction !== "CREATED") {
+      return NextResponse.json<ApiResponse>(
+        { success: true, message: "Ignored" },
+        { status: 200 }
+      );
+    }
 
-    const leadUrn = body?.lead ?? body?.event?.lead ?? body?.leadUrn ?? body?.lead_id;
-    const formUrn = body?.form ?? body?.event?.form ?? body?.formUrn ?? body?.form_id;
+    const leadUrn = body.leadGenFormResponse ?? body.lead ?? body.event?.lead;
+    const formUrn = body.leadGenForm ?? body.form ?? body.event?.form;
 
-    let mappedLead = mapLinkedInPayload({
-      name: directFullName,
-      email: directEmail,
-      phone: directPhone,
-      jobTitle: directJobTitle,
-      company: directCompany,
-    });
+    let mappedLead;
 
-    // Real LinkedIn flow: webhook gives a lead/form URN, and the app must fetch the actual data.
     if (leadUrn && formUrn) {
       const leadData = await fetchLinkedInLeadData(leadUrn, formUrn);
 
-      if (leadData) {
-        mappedLead = mapLinkedInPayload({
-          name: leadData.name,
-          email: leadData.email,
-          phone: leadData.phone,
-          jobTitle: leadData.jobTitle,
-        });
-      } else {
-        logger.warn(CONTEXT, "LinkedIn lead fetch failed; falling back to mock payload fields if present");
+      if (!leadData) {
+        logger.error(CONTEXT, "Failed to fetch lead data from LinkedIn API");
+        return NextResponse.json<ApiResponse>(
+          { success: false, message: "API fetch failed" },
+          { status: 200 }
+        );
       }
+
+      mappedLead = mapLinkedInPayload(leadData);
+    } else {
+      mappedLead = mapLinkedInPayload({
+        fullname: body.fullName,
+        email: body.email,
+        phone: body.phone,
+        company: body.company,
+        jobtitle: body.jobTitle,
+      });
     }
 
     const saved = await createLead(mappedLead);
