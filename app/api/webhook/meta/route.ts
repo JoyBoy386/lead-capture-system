@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyMetaWebhook, fetchLeadFromGraph } from "@/lib/facebook";
 import { mapMetaFields } from "@/lib/leadMapper";
 import { createLead } from "@/lib/leadService";
+import { sendWhatsAppMessage } from "@/lib/whatsapp";
 import { metaWebhookBodySchema } from "@/lib/validators";
 import { logger } from "@/lib/logger";
 import type { ApiResponse } from "@/types/lead";
@@ -70,6 +71,11 @@ export async function POST(request: NextRequest) {
         }
 
         logger.info(CONTEXT, "Lead saved to Supabase");
+        await sendWhatsAppMessage({
+          to: mappedLead.phone,
+          name: mappedLead.name,
+          source: mappedLead.source,
+        });
       }
     }
 

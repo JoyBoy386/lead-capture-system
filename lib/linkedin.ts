@@ -92,8 +92,8 @@ export function verifyLinkedInSignature(
   const secret = process.env.LINKEDIN_SECRET;
 
   if (!secret) {
-    logger.warn(CONTEXT, "LINKEDIN_SECRET not set – skipping signature check");
-    return true; // fail-open in dev; tighten in prod
+    logger.error(CONTEXT, "LINKEDIN_SECRET is not set");
+    return false;
   }
 
   if (!signatureHeader) {

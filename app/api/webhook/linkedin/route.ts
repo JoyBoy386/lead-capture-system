@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createLead } from "@/lib/leadService";
+import { sendWhatsAppMessage } from "@/lib/whatsapp";
 import { mapLinkedInPayload } from "@/lib/leadMapper";
 import { logger } from "@/lib/logger";
 import { fetchLinkedInLeadData, verifyLinkedInSignature } from "@/lib/linkedin";
@@ -59,12 +60,20 @@ export async function POST(request: NextRequest) {
         logger.error(CONTEXT, "Failed to fetch lead data from LinkedIn API");
         return NextResponse.json<ApiResponse>(
           { success: false, message: "API fetch failed" },
-          { status: 200 }
+          { status: 502 }
         );
       }
 
       mappedLead = mapLinkedInPayload(leadData);
     } else {
+      if (process.env.NODE_ENV === "production") {
+        logger.warn(CONTEXT, "Rejected production payload without LinkedIn lead URNs");
+        return NextResponse.json<ApiResponse>(
+          { success: false, message: "Missing LinkedIn lead URNs" },
+          { status: 400 }
+        );
+      }
+
       mappedLead = mapLinkedInPayload({
         fullname: body.fullName,
         email: body.email,
@@ -80,11 +89,16 @@ export async function POST(request: NextRequest) {
       logger.error(CONTEXT, "Failed to save lead to Supabase");
       return NextResponse.json<ApiResponse>(
         { success: false, message: "Failed to save lead" },
-        { status: 200 }
+        { status: 500 }
       );
     }
 
     logger.info(CONTEXT, "Lead saved to Supabase");
+    await sendWhatsAppMessage({
+      to: mappedLead.phone,
+      name: mappedLead.name,
+      source: mappedLead.source,
+    });
 
     return NextResponse.json<ApiResponse>(
       { success: true, message: "Webhook processed" },
@@ -95,7 +109,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json<ApiResponse>(
       { success: false, message: "Internal error" },
-      { status: 200 }
+      { status: 500 }
     );
   }
 }
