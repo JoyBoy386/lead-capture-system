@@ -14,9 +14,20 @@ function shouldLog(level: LogLevel): boolean {
   return LOG_LEVELS[level] >= LOG_LEVELS[currentLevel];
 }
 
+// Inside lib/logger.ts
 function formatMessage(level: LogLevel, context: string, message: string, meta?: unknown): string {
   const timestamp = new Date().toISOString();
-  const metaStr = meta ? ` ${JSON.stringify(meta)}` : "";
+  let metaStr = "";
+  
+  if (meta) {
+    // ADD THIS CHECK: If it's an Error, print the message and stack trace
+    if (meta instanceof Error) {
+      metaStr = ` | Error: ${meta.message}\n${meta.stack}`;
+    } else {
+      metaStr = ` ${JSON.stringify(meta)}`;
+    }
+  }
+  
   return `[${timestamp}] [${level.toUpperCase()}] [${context}] ${message}${metaStr}`;
 }
 
