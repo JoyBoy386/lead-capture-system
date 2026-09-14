@@ -1,5 +1,6 @@
 import type {
   CrmLeadInsert,
+  LeadSource,
   MetaFieldData,
 } from "@/types/lead";
 
@@ -38,7 +39,30 @@ function defaults(overrides: Partial<CrmLeadInsert>): CrmLeadInsert {
 }
 
 // ── Mappers ───────────────────────────────────────────
-export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
+export function getMetaSource(pageId?: string): LeadSource {
+  const normalizedPageId = pageId?.trim();
+
+  if (
+    normalizedPageId &&
+    normalizedPageId === process.env.META_INSTAGRAM_PAGE_ID?.trim()
+  ) {
+    return "instagram";
+  }
+
+  if (
+    normalizedPageId &&
+    normalizedPageId === process.env.META_FACEBOOK_PAGE_ID?.trim()
+  ) {
+    return "facebook";
+  }
+
+  return "meta";
+}
+
+export function mapMetaFields(
+  fieldData: MetaFieldData[],
+  source: LeadSource = "meta"
+): CrmLeadInsert {
   const realPhoneNumber = findFieldValue(fieldData, [
     "phone_number",
     "phone",
@@ -55,7 +79,7 @@ export function mapMetaFields(fieldData: MetaFieldData[]): CrmLeadInsert {
     email: findFieldValue(fieldData, ["email"]), 
     phone: realPhoneNumber || testPhoneNumber,
     title: findFieldValue(fieldData, ["job_title", "title", "position"]), 
-    source: "meta",      
+    source,
     interest: findFieldValue(fieldData, ["interest", "product", "service"]), 
     notes: "Lead captured via Meta Lead Form",
   });

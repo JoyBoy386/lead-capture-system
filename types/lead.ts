@@ -2,7 +2,7 @@
 // Canonical CRM lead row (maps 1-to-1 to crm_leads)
 // ──────────────────────────────────────────────────────
 
-export type LeadSource = "meta" | "linkedin";
+export type LeadSource = "meta" | "facebook" | "instagram" | "linkedin";
 export type LeadStage =
   | "lead"
   | "new"

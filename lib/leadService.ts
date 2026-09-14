@@ -64,6 +64,28 @@ export async function getLeadById(id: string): Promise<CrmLead | null> {
   }
 }
 
+export async function getLeads(limit = 50): Promise<CrmLead[]> {
+  try {
+    const supabase = supabaseAdmin();
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      logger.error(CONTEXT, "getLeads failed", error);
+      return [];
+    }
+
+    return (data ?? []) as CrmLead[];
+  } catch (err) {
+    logger.error(CONTEXT, "Unexpected error in getLeads", err);
+    return [];
+  }
+}
+
 export async function getLeadsBySource(
   source: string,
   limit = 50

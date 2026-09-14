@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyMetaWebhook, fetchLeadFromGraph } from "@/lib/facebook";
-import { mapMetaFields } from "@/lib/leadMapper";
+import { getMetaSource, mapMetaFields } from "@/lib/leadMapper";
 import { createLead } from "@/lib/leadService";
 import { sendWhatsAppMessage } from "@/lib/whatsapp";
 import { metaWebhookBodySchema } from "@/lib/validators";
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       for (const change of e.changes) {
         if (change.field !== "leadgen") continue;
 
-        const { leadgen_id, field_data } = change.value;
+        const { leadgen_id, field_data, page_id } = change.value;
 
         let fields = field_data;
         if (!fields || fields.length === 0) {
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
           fields = graphLead?.field_data ?? [];
         }
 
-        const mappedLead = mapMetaFields(fields);
+        const mappedLead = mapMetaFields(fields, getMetaSource(page_id ?? e.id));
 
         const saved = await createLead(mappedLead);
 
