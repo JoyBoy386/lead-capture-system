@@ -1,5 +1,3 @@
-import { spawn } from "child_process";
-import path from "path";
 import { logger } from "./logger";
 
 const CONTEXT = "whatsapp";
@@ -23,50 +21,39 @@ export async function sendWhatsAppMessage(
     return false;
   }
 
-  const pythonCommand = process.env.PYTHON_COMMAND || "python";
-  const scriptPath = path.join(process.cwd(), "scripts", "send_whatsapp.py");
-  const messageTemplate =
-    process.env.WHATSAPP_MESSAGE_TEMPLATE ||
-    "Hi {name}, thank you for your interest. We received your lead from {source}.";
+  const workerUrl = process.env.WHATSAPP_WORKER_URL;
+  const workerToken = process.env.WHATSAPP_WORKER_TOKEN;
 
-  return new Promise((resolve) => {
-    const child = spawn(pythonCommand, [scriptPath], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        WHATSAPP_MESSAGE_TEMPLATE: messageTemplate,
+  if (!workerUrl || !workerToken) {
+    logger.error(CONTEXT, "WhatsApp worker URL or token is not configured");
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${workerUrl.replace(/\/$/, "")}/send`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${workerToken}`,
+        "Content-Type": "application/json",
       },
-      stdio: ["pipe", "pipe", "pipe"],
+      body: JSON.stringify(message),
+      signal: AbortSignal.timeout(45_000),
     });
 
-    let output = "";
-    let errorOutput = "";
+    const responseBody = await response.text();
 
-    child.stdout.on("data", (chunk: Buffer) => {
-      output += chunk.toString();
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      errorOutput += chunk.toString();
-    });
-    child.on("error", (error) => {
-      logger.error(CONTEXT, "Could not start Python WhatsApp worker", error);
-      resolve(false);
-    });
-    child.on("close", (code) => {
-      if (code !== 0) {
-        logger.error(CONTEXT, "WhatsApp worker failed", errorOutput || output);
-        resolve(false);
-        return;
-      }
+    if (!response.ok) {
+      logger.error(CONTEXT, `WhatsApp worker returned ${response.status}`, responseBody);
+      return false;
+    }
 
-      logger.info(CONTEXT, "WhatsApp message sent", {
-        to: message.to,
-        response: output.trim(),
-      });
-      resolve(true);
+    logger.info(CONTEXT, "WhatsApp worker accepted message", {
+      to: message.to,
+      response: responseBody,
     });
-
-    child.stdin.write(JSON.stringify(message));
-    child.stdin.end();
-  });
+    return true;
+  } catch (err) {
+    logger.error(CONTEXT, "WhatsApp worker request failed", err);
+    return false;
+  }
 }
